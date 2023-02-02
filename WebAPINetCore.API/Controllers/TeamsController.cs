@@ -1,11 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using WebAPINetCore.API.DTOs;
+using WebAPINetCore.API.Enums;
 using WebAPINetCore.API.Models;
+using WebAPINetCore.API.Validators;
 
 namespace WebAPINetCore.API.Controllers
 {
@@ -20,11 +18,40 @@ namespace WebAPINetCore.API.Controllers
             _context = context;
         }
 
-        // GET: api/Teams
+       
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Team>>> GetTeams()
+        public async Task<ActionResult<IEnumerable<TeamDTO>>> GetTeams(int? id, string? orderBy = "")
         {
-            return await _context.Teams.ToListAsync();
+            IQueryable<Team> teams = _context.Teams;
+
+            //Query by ID
+            if (id.HasValue)
+            {
+                Team? team = await teams.Where(t => t.Id == id).FirstOrDefaultAsync();
+                if (team == null)
+                {
+                    return NotFound();
+                }
+                return Ok(TeamToDTO(team));
+            }
+
+            //Query All Teams ordered by Name or Location
+            if (!string.IsNullOrEmpty(orderBy))
+            {
+                switch (orderBy.ToLowerInvariant())
+                {
+                    case "name":
+                        teams = teams.OrderBy(t => t.Name);
+                        break;
+                    case "location":
+                        teams = teams.OrderBy(t => t.Location);
+                        break;
+                    default:
+                        return BadRequest("Invalid value for orderBy parameter.");
+                }
+            }
+
+            return Ok(await teams.Select(t => TeamToDTO(t)).ToListAsync());
         }
 
         // GET: api/Teams/5
@@ -41,67 +68,75 @@ namespace WebAPINetCore.API.Controllers
             return team;
         }
 
-        // PUT: api/Teams/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutTeam(int id, Team team)
+        // POST: api/Teams/1/player/2
+        [HttpPut("{teamId}/player/{playerId}")]
+        public async Task<IActionResult> UpdatePlayerInTeam(int teamId, int playerId, TeamUpdateType teamUpdateType)
         {
-            if (id != team.Id)
+            if (!await _context.Teams.AnyAsync(x => x.Id == teamId))
             {
-                return BadRequest();
+                return NotFound();
             }
 
-            _context.Entry(team).State = EntityState.Modified;
+            var player = await _context.Players.FirstOrDefaultAsync(x => x.Id == playerId);
 
-            try
+            if (player == null)
             {
-                await _context.SaveChangesAsync();
+                return NotFound();
             }
-            catch (DbUpdateConcurrencyException)
+
+            if (teamUpdateType == TeamUpdateType.Add)
             {
-                if (!TeamExists(id))
+                player.TeamId = teamId;
+                //Validate Player
+                var validator = new PlayerValidator(_context);
+                var validatorResult = await validator.ValidateAsync(player);
+
+                if (!validatorResult.IsValid)
                 {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
+                    return BadRequest(validatorResult.ToString());
                 }
             }
+            else if (teamUpdateType == TeamUpdateType.Remove)
+            {
+                if (player.TeamId != teamId) {
+                    return BadRequest("Player not on team.");
+                }
+                player.TeamId = null;
+            }
+            else
+            {
+                return BadRequest("Invalid action.");
+            }
+
+            await _context.SaveChangesAsync();
 
             return NoContent();
         }
 
         // POST: api/Teams
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Team>> PostTeam(Team team)
+        public async Task<ActionResult<Team>> PostTeam(TeamDTO teamDTO)
         {
+            Team team = DTOToTeam(teamDTO);
             _context.Teams.Add(team);
             await _context.SaveChangesAsync();
 
             return CreatedAtAction("GetTeam", new { id = team.Id }, team);
         }
 
-        // DELETE: api/Teams/5
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteTeam(int id)
-        {
-            var team = await _context.Teams.FindAsync(id);
-            if (team == null)
-            {
-                return NotFound();
-            }
-
-            _context.Teams.Remove(team);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        private bool TeamExists(int id)
-        {
-            return _context.Teams.Any(e => e.Id == id);
-        }
+        private static TeamDTO TeamToDTO(Team team) =>
+         new TeamDTO
+         {
+             Id = team.Id,
+             Name = team.Name,
+             Location = team.Location
+         };
+        private static Team DTOToTeam(TeamDTO teamDTO) =>
+         new Team
+         {
+             Id = teamDTO.Id,
+             Name = teamDTO.Name,
+             Location = teamDTO.Location
+         };
     }
 }

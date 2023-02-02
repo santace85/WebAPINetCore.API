@@ -1,14 +1,16 @@
 using FluentValidation;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using WebAPINetCore.API.DTOs;
+using WebAPINetCore.API.Models;
 
-namespace WebAPINetCore.API.Models
+namespace WebAPINetCore.API.Validators
 {
-    public class TeamValidator : AbstractValidator<Team>
+    public class TeamDTOValidator : AbstractValidator<TeamDTO>
     {
         private readonly ApplicationDbContext _dbContext;
 
-        public TeamValidator(ApplicationDbContext dbContext)
+        public TeamDTOValidator(ApplicationDbContext dbContext)
         {
             _dbContext = dbContext;
 
@@ -25,16 +27,16 @@ namespace WebAPINetCore.API.Models
                 .WithMessage("Location must be unique.");
         }
 
-        private bool IsDuplicateName(Team team)
+        private bool IsDuplicateName(TeamDTO teamDTO)
         {
             return _dbContext.Teams
-                .Any(x => x.Name == team.Name && x.Id != team.Id);
+                .Any(x => x.Name == teamDTO.Name && x.Id != teamDTO.Id);
         }
 
-        private bool IsDuplicateLocation(Team team)
+        private bool IsDuplicateLocation(TeamDTO teamDTO)
         {
             return _dbContext.Teams
-                .Any(x => x.Location == team.Location && x.Id != team.Id);
+                .Any(x => x.Location == teamDTO.Location && x.Id != teamDTO.Id);
         }
     }
 }
